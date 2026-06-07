@@ -25,6 +25,7 @@ import { getStatusName, formatDate, formatCurrency } from '../utils';
 export const Students: React.FC = () => {
   const { students, channels, addStudent, updateStudent, deleteStudent } = useAppStore();
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeStatus, setActiveStatus] = useState<'all' | Student['status']>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [formData, setFormData] = useState({
@@ -40,11 +41,21 @@ export const Students: React.FC = () => {
     courseId: '',
   });
 
-  const filteredStudents = students.filter(
-    (student) =>
+  const statusCounts = {
+    all: students.length,
+    active: students.filter((s) => s.status === 'active').length,
+    suspended: students.filter((s) => s.status === 'suspended').length,
+    graduated: students.filter((s) => s.status === 'graduated').length,
+    refunded: students.filter((s) => s.status === 'refunded').length,
+  };
+
+  const filteredStudents = students.filter((student) => {
+    const matchesSearch =
       student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.parentName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      student.parentName.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = activeStatus === 'all' || student.status === activeStatus;
+    return matchesSearch && matchesStatus;
+  });
 
   const handleAddClick = () => {
     setEditingStudent(null);
@@ -122,7 +133,7 @@ export const Students: React.FC = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="mb-6">
+          <div className="mb-6 space-y-4">
             <div className="relative max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
@@ -131,6 +142,24 @@ export const Students: React.FC = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
               />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(['all', 'active', 'suspended', 'graduated', 'refunded'] as const).map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setActiveStatus(status)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    activeStatus === status
+                      ? 'bg-primary-500 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {status === 'all' ? '全部' : getStatusName(status)}
+                  <span className={`ml-1.5 ${activeStatus === status ? 'text-white/80' : 'text-slate-400'}`}>
+                    {statusCounts[status]}
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -205,7 +234,7 @@ export const Students: React.FC = () => {
 
           {filteredStudents.length === 0 && (
             <div className="text-center py-12 text-slate-500">
-              暂无学员数据
+              暂无符合条件的学员
             </div>
           )}
         </CardContent>
