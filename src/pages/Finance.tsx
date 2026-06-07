@@ -41,9 +41,11 @@ export const Finance: React.FC = () => {
     students,
     getRefundReasons,
     getMonthlyReports,
+    getStudentRefundable,
     addFinanceRecord,
     addRefundRecord,
     updateRefundStatus,
+    approveRefund,
   } = useAppStore();
   const [activeTab, setActiveTab] = useState('records');
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
@@ -59,6 +61,8 @@ export const Finance: React.FC = () => {
     amount: '',
     reason: '',
   });
+  const [refundError, setRefundError] = useState('');
+  const [approveError, setApproveError] = useState('');
 
   const refundReasons = getRefundReasons();
   const monthlyReports = getMonthlyReports();
@@ -104,27 +108,47 @@ export const Finance: React.FC = () => {
   };
 
   const handleAddRefund = () => {
+    const amount = parseInt(refundForm.amount) || 0;
+
+    if (!refundForm.studentId) {
+      setRefundError('请选择学员');
+      return;
+    }
+
+    if (amount <= 0) {
+      setRefundError('退费金额必须大于0');
+      return;
+    }
+
+    const refundable = getStudentRefundable(refundForm.studentId);
+    if (amount > refundable) {
+      setRefundError(`退费金额不能超过可退余额 ${formatCurrency(refundable)}`);
+      return;
+    }
+
+    if (!refundForm.reason.trim()) {
+      setRefundError('请填写退费原因');
+      return;
+    }
+
     addRefundRecord({
       studentId: refundForm.studentId,
-      amount: parseInt(refundForm.amount) || 0,
+      amount,
       reason: refundForm.reason,
       date: new Date().toISOString().split('T')[0],
       status: 'pending',
     });
     setIsRefundDialogOpen(false);
     setRefundForm({ studentId: '', amount: '', reason: '' });
+    setRefundError('');
   };
 
-  const handleApproveRefund = (id: string, studentId: string, amount: number) => {
-    updateRefundStatus(id, 'approved');
-    addFinanceRecord({
-      type: 'refund',
-      studentId,
-      amount: -amount,
-      date: new Date().toISOString().split('T')[0],
-      category: '退费',
-      remark: '退费审批通过',
-    });
+  const handleApproveRefund = (id: string) => {
+    const result = approveRefund(id);
+    if (!result.success) {
+      setApproveError(result.message);
+      setTimeout(() => setApproveError(''), 3000);
+    }
   };
 
   return (
@@ -313,6 +337,11 @@ export const Finance: React.FC = () => {
               </div>
             </TabsContent>
             <TabsContent value="refunds">
+              {approveError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                  {approveError}
+                </div>
+              )}
               <div className="table-container">
                 <table className="table">
                   <thead>
@@ -350,7 +379,7 @@ export const Finance: React.FC = () => {
                           <td>
                             {record.status === 'pending' && (
                               <div className="flex gap-2">
-                                <Button size="sm" onClick={() => handleApproveRefund(record.id, record.studentId, record.amount)}>
+                                <Button size="sm" onClick={() => handleApproveRefund(record.id)}>
                                   通过
                                 </Button>
                                 <Button size="sm" variant="danger" onClick={() => updateRefundStatus(record.id, 'rejected')}>
@@ -438,27 +467,51 @@ export const Finance: React.FC = () => {
             <DialogTitle>申请退费</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {refundError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                {refundError}
+              </div>
+            )}
             <div>
               <label className="label">选择学员</label>
-              <Select value={refundForm.studentId} onValueChange={(value) => setRefundForm({ ...refundForm, studentId: value })}>
+              <Select
+                value={refundForm.studentId}
+                onValueChange={(value) => {
+                  setRefundForm({ ...refundForm, studentId: value });
+                  setRefundError('');
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="请选择学员" />
                 </SelectTrigger>
                 <SelectContent>
-                  {students.map((student) => (
-                    <SelectItem key={student.id} value={student.id}>
-                      {student.name}
-                    </SelectItem>
-                  ))}
+                  {students.map((student) => {
+                    const refundable = getStudentRefundable(student.id);
+                    return (
+                      <SelectItem key={student.id} value={student.id}>
+                        {student.name} (可退: {formatCurrency(refundable)})
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
+            {refundForm.studentId && (
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-700">
+                  可退余额：<span className="font-semibold">{formatCurrency(getStudentRefundable(refundForm.studentId))}</span>
+                </p>
+              </div>
+            )}
             <div>
               <label className="label">退费金额</label>
               <Input
                 type="number"
                 value={refundForm.amount}
-                onChange={(e) => setRefundForm({ ...refundForm, amount: e.target.value })}
+                onChange={(e) => {
+                  setRefundForm({ ...refundForm, amount: e.target.value });
+                  setRefundError('');
+                }}
                 placeholder="请输入金额"
               />
             </div>
@@ -466,7 +519,10 @@ export const Finance: React.FC = () => {
               <label className="label">退费原因</label>
               <Input
                 value={refundForm.reason}
-                onChange={(e) => setRefundForm({ ...refundForm, reason: e.target.value })}
+                onChange={(e) => {
+                  setRefundForm({ ...refundForm, reason: e.target.value });
+                  setRefundError('');
+                }}
                 placeholder="请输入退费原因"
               />
             </div>

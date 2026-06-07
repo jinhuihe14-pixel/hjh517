@@ -37,6 +37,8 @@ interface AppState {
   addFinanceRecord: (record: Omit<FinanceRecord, 'id'>) => void;
   addRefundRecord: (record: Omit<RefundRecord, 'id'>) => void;
   updateRefundStatus: (id: string, status: RefundRecord['status']) => void;
+  getStudentRefundable: (studentId: string) => number;
+  approveRefund: (id: string) => { success: boolean; message: string };
   
   addTeachingRecord: (record: Omit<TeachingRecord, 'id'>) => void;
   
@@ -200,6 +202,81 @@ export const useAppStore = create<AppState>()(
             r.id === id ? { ...r, status } : r
           ),
         })),
+
+      getStudentRefundable: (studentId) => {
+        const { students, refundRecords } = get();
+        const student = students.find((s) => s.id === studentId);
+        if (!student) return 0;
+        const approvedRefunds = refundRecords.filter(
+          (r) => r.studentId === studentId && r.status === 'approved'
+        );
+        const totalApprovedRefund = approvedRefunds.reduce((sum, r) => sum + r.amount, 0);
+        return Math.max(0, student.totalPaid - totalApprovedRefund);
+      },
+
+      approveRefund: (id) => {
+        const { refundRecords, getStudentRefundable } = get();
+        const refund = refundRecords.find((r) => r.id === id);
+
+        if (!refund) {
+          return { success: false, message: '退费记录不存在' };
+        }
+
+        if (refund.status === 'approved') {
+          return { success: false, message: '该退费已批准，请勿重复操作' };
+        }
+
+        if (refund.status === 'rejected') {
+          return { success: false, message: '该退费已拒绝，无法批准' };
+        }
+
+        const refundable = getStudentRefundable(refund.studentId);
+        if (refund.amount > refundable) {
+          return { success: false, message: `退费金额超过可退余额，可退金额为 ${refundable} 元` };
+        }
+
+        if (refund.amount <= 0) {
+          return { success: false, message: '退费金额必须大于0' };
+        }
+
+        set((state) => {
+          const newRefundRecords = state.refundRecords.map((r) =>
+            r.id === id ? { ...r, status: 'approved' } : r
+          );
+
+          const newFinanceRecords = [
+            ...state.financeRecords,
+            {
+              id: generateId(),
+              type: 'refund' as const,
+              studentId: refund.studentId,
+              amount: -refund.amount,
+              date: new Date().toISOString().split('T')[0],
+              category: '退费',
+              remark: '退费审批通过',
+            },
+          ];
+
+          const newStudents = state.students.map((s) => {
+            if (s.id !== refund.studentId) return s;
+            const otherApprovedRefunds = state.refundRecords
+              .filter((r) => r.studentId === s.id && r.status === 'approved')
+              .reduce((sum, r) => sum + r.amount, 0);
+            const totalApprovedAfter = otherApprovedRefunds + refund.amount;
+            const remainingRefundable = s.totalPaid - totalApprovedAfter;
+            const newStatus = remainingRefundable <= 0 ? 'refunded' : s.status;
+            return { ...s, status: newStatus };
+          });
+
+          return {
+            refundRecords: newRefundRecords,
+            financeRecords: newFinanceRecords,
+            students: newStudents,
+          };
+        });
+
+        return { success: true, message: '退费审批通过' };
+      },
 
       addTeachingRecord: (record) =>
         set((state) => ({

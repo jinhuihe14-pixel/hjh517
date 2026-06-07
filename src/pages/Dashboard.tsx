@@ -41,6 +41,13 @@ export const Dashboard: React.FC = () => {
       color: 'bg-green-500',
     },
     {
+      title: '退费率',
+      value: `${stats.refundRate}%`,
+      subValue: '仅统计已批准退费',
+      icon: TrendingUp,
+      color: 'bg-orange-500',
+    },
+    {
       title: '开设课程',
       value: stats.totalCourses,
       subValue: '3个课程类型',
